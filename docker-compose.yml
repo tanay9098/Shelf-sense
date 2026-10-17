@@ -1,0 +1,40 @@
+# ShelfSense local stack.
+#   docker compose up -d falkordb      -> database only (run the API with uvicorn locally)
+#   docker compose up -d --build       -> database + API on http://localhost:8000
+services:
+  falkordb:
+    image: falkordb/falkordb:latest   # pin a version (e.g. v4.x) for a frozen submission
+    ports:
+      - "6379:6379"   # FalkorDB (Redis protocol)
+      - "3000:3000"   # FalkorDB Browser UI - inspect the graph at http://localhost:3000
+    environment:
+      # Server-side cap on query time (ms); the app also passes a per-query timeout.
+      - FALKORDB_ARGS=TIMEOUT_MAX 10000
+      # To require a password: REDIS_ARGS=--requirepass ${FALKORDB_PASSWORD} and set it in .env
+    volumes:
+      - falkordb_data:/var/lib/falkordb/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build: .
+    profiles: ["app"]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - FALKORDB_PASSWORD=${FALKORDB_PASSWORD:-}
+      - SEED_ON_STARTUP=true
+      - LLM_PROVIDER=${LLM_PROVIDER:-none}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+
+volumes:
+  falkordb_data:

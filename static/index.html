@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShelfSense · Retail Availability Intelligence</title>
+  <meta name="description" content="Graph-powered stockout investigations on FalkorDB. Simulated demo data.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M7 11h18M7 17h18M7 23h18' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='21' cy='11' r='2.5' fill='%23a5b4fc'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to investigation</a>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M7 11h18M7 17h18M7 23h18"/><circle cx="21" cy="11" r="2.5"/></svg>
+      <div>
+        <div class="brand-name">ShelfSense</div>
+        <div class="brand-sub">Retail Availability Intelligence</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="badge badge-sim" title="All retailers, orders and incidents are fictional">Simulated Demo Data</span>
+      <span id="db-status" class="status-pill" role="status" aria-live="polite"><span class="dot"></span><span class="label">Checking FalkorDB…</span></span>
+    </div>
+  </header>
+
+  <main id="main" class="layout">
+    <!-- A. Investigation workspace -->
+    <aside class="workspace" aria-labelledby="ws-title">
+      <section class="card">
+        <h2 id="ws-title" class="card-title">Investigate a stockout</h2>
+        <form id="investigate-form" novalidate>
+          <label for="question" class="field-label">Question</label>
+          <textarea id="question" name="question" rows="3" maxlength="500"
+            placeholder="e.g. Why is Surf Excel unavailable at Sharma Kirana Store even though Bhiwandi DC has stock?"></textarea>
+          <div class="field-row">
+            <div>
+              <label for="retailer" class="field-label">Retailer <span class="muted">(optional)</span></label>
+              <select id="retailer"><option value="">From question</option></select>
+            </div>
+            <div>
+              <label for="product" class="field-label">Product <span class="muted">(optional)</span></label>
+              <select id="product"><option value="">From question</option></select>
+            </div>
+          </div>
+          <button id="investigate-btn" type="submit" class="btn btn-primary btn-block">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span>Investigate</span>
+          </button>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="sc-title">
+        <h2 id="sc-title" class="card-title">Example scenarios</h2>
+        <div id="scenarios" class="scenario-list"><p class="muted">Loading scenarios…</p></div>
+      </section>
+
+      <section class="card card-note">
+        <h2 class="card-title">How this works</h2>
+        <ol class="how-list">
+          <li>Your question is mapped to a retailer and product.</li>
+          <li>Approved, parameterised Cypher tools traverse FalkorDB across retailers, routes, stock, orders and deliveries.</li>
+          <li>Rules separate <strong>observed facts</strong> from <strong>inferences</strong> and flag missing records.</li>
+        </ol>
+        <p class="muted small">No LLM-written Cypher is executed. Confidence is qualitative and rule-based, not a probability.</p>
+      </section>
+    </aside>
+
+    <section class="results" aria-live="polite" aria-busy="false" id="results">
+      <div id="empty-state" class="card empty-state">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="14" width="48" height="36" rx="6"/><path d="M8 26h48M8 38h48"/><circle cx="44" cy="20" r="3"/></svg>
+        <h2>Start an investigation</h2>
+        <p>Pick an example scenario or ask why a product is unavailable at a retailer. ShelfSense will trace the connected records in the graph and show the evidence behind its answer.</p>
+      </div>
+
+      <div id="loading" class="card loading" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Traversing the graph…</p>
+      </div>
+
+      <div id="error-state" class="card error-state" role="alert" hidden></div>
+
+      <div id="result" hidden>
+        <!-- B. Result -->
+        <section class="card result-card" aria-labelledby="cause-label">
+          <div class="result-head">
+            <div>
+              <p class="eyebrow" id="result-meta"></p>
+              <h2 id="cause-label" class="cause-label"></h2>
+              <p class="entity-line" id="entity-line"></p>
+            </div>
+            <div class="pills" id="cause-pills"></div>
+          </div>
+          <p class="summary" id="summary"></p>
+          <p class="muted small" id="summary-source"></p>
+          <div id="confidence-basis" class="confidence-basis"></div>
+        </section>
+
+        <div class="grid-2">
+          <section class="card" aria-labelledby="stock-title">
+            <h3 id="stock-title" class="card-title">Stock position</h3>
+            <div id="stock-summary"></div>
+          </section>
+          <section class="card" aria-labelledby="actions-title">
+            <h3 id="actions-title" class="card-title">Recommended next actions</h3>
+            <ol id="actions" class="action-list"></ol>
+          </section>
+        </div>
+
+        <!-- Before / after comparison -->
+        <section id="comparison" class="card comparison" hidden aria-labelledby="cmp-title">
+          <div class="card-title-row">
+            <h3 id="cmp-title" class="card-title">Before → after record change</h3>
+            <button type="button" class="btn btn-ghost btn-sm" id="dismiss-comparison">Dismiss</button>
+          </div>
+          <div id="comparison-body"></div>
+        </section>
+
+        <!-- D. Graph -->
+        <section class="card" aria-labelledby="graph-title">
+          <div class="card-title-row">
+            <h3 id="graph-title" class="card-title">Investigation subgraph</h3>
+            <span class="muted small" id="graph-meta"></span>
+          </div>
+          <ol id="graph-path" class="path-chain" aria-label="Highlighted graph path"></ol>
+          <div class="graph-wrap">
+            <div id="graph" class="graph-canvas"></div>
+            <aside id="node-detail" class="node-detail" aria-live="polite">
+              <p class="muted small">Select a node (click, or Tab + Enter) to see its record. Record-ID chips in facts and evidence also jump here.</p>
+            </aside>
+          </div>
+          <div id="graph-legend" class="legend" aria-label="Legend"></div>
+        </section>
+
+        <!-- C. Reasoning -->
+        <div class="grid-2">
+          <section class="card" aria-labelledby="facts-title">
+            <h3 id="facts-title" class="card-title"><span class="tag tag-fact">Observed facts</span></h3>
+            <p class="muted small">Statements that restate records returned by graph queries.</p>
+            <ul id="facts" class="fact-list"></ul>
+          </section>
+          <section class="card" aria-labelledby="inf-title">
+            <h3 id="inf-title" class="card-title"><span class="tag tag-inference">Inferences</span></h3>
+            <p class="muted small">Conclusions drawn from the facts they cite.</p>
+            <ul id="inferences" class="fact-list"></ul>
+          </section>
+        </div>
+
+        <div class="grid-2">
+          <section class="card" aria-labelledby="missing-title">
+            <h3 id="missing-title" class="card-title"><span class="tag tag-gap">Missing or disconnected evidence</span></h3>
+            <ul id="missing" class="gap-list"></ul>
+            <div id="contradictions"></div>
+          </section>
+          <section class="card" aria-labelledby="hyp-title">
+            <h3 id="hyp-title" class="card-title">Test the hypothesis</h3>
+            <div id="hypothesis"></div>
+          </section>
+        </div>
+
+        <section class="card" aria-labelledby="ev-title">
+          <h3 id="ev-title" class="card-title">Evidence records</h3>
+          <div id="evidence" class="evidence-grid"></div>
+        </section>
+
+        <!-- E. Data modification -->
+        <section class="card mutate-card" aria-labelledby="mut-title">
+          <div class="card-title-row">
+            <h3 id="mut-title" class="card-title">Change a simulated record</h3>
+            <button type="button" id="reset-btn" class="btn btn-ghost btn-sm">Reset to seed data</button>
+          </div>
+          <p class="muted small">Edits are written to FalkorDB, then the investigation is re-run from scratch. Only allow-listed fields can be changed.</p>
+          <div id="mutations"></div>
+          <p id="mutation-msg" class="mutation-msg" role="status" hidden></p>
+        </section>
+
+        <details class="card trace">
+          <summary><span class="card-title">Query trace</span> <span class="muted small" id="trace-meta"></span></summary>
+          <div id="trace"></div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>ShelfSense · WeMakeDevs × FalkorDB Hackathon 2026 · All data is simulated. "Surf Excel" is used only as an illustrative product name; no incident shown involves a real company.</p>
+  </footer>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h3 id="confirm-title">Confirm change</h3>
+      <p id="confirm-text"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-ghost">Cancel</button>
+        <button value="ok" class="btn btn-primary" id="confirm-ok">Apply</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/graph.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
