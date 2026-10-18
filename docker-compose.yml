@@ -1,6 +1,6 @@
 # ShelfSense local stack.
 #   docker compose up -d falkordb      -> database only (run the API with uvicorn locally)
-#   docker compose up -d --build       -> database + API on http://localhost:8000
+#   docker compose --profile app up -d --build   -> database + API on http://localhost:8000
 services:
   falkordb:
     image: falkordb/falkordb:latest   # pin a version (e.g. v4.x) for a frozen submission

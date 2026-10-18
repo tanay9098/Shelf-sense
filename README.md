@@ -28,7 +28,7 @@ Every investigation is a set of **multi-hop graph traversals** executed in Falko
 | What happened to replenishment? | `(Delivery)-[:FULFILLS]->(Order)-[:FOR_RETAILER]->(Retailer)`, `(Order)-[:FOR_PRODUCT]->(Product)`, `(Order)-[:ALLOCATED_FROM]->(Warehouse)` |
 | Who is holding the reserved stock? | `(Order)-[:RESERVES]->(Inventory)<-[:HOLDS]-(Warehouse)` |
 
-The reasoning engine never loads the whole graph; it receives only the rows those queries return (typically 9 queries, ~15–25 ms total, 12–25 records). The dashboard draws exactly the nodes and edges those queries returned — the visual is the query result, not a hard-coded diagram.
+The reasoning engine never loads the whole graph; it receives only the rows those queries return (typically 9 queries — 8 when no route warehouse holds the product — ~15–25 ms total, 12–25 records). The dashboard draws exactly the nodes and edges those queries returned — the visual is the query result, not a hard-coded diagram.
 
 ## 3. Architecture
 
@@ -42,7 +42,7 @@ FastAPI  (/api/investigate, /api/demo/mutate, /api/demo/reset, …)
 InvestigationService ── question → retailer/product (regex IDs, name match,
    │                     graph-assisted disambiguation)
    ▼
-Approved investigation tools  (8 fixed, parameterised Cypher templates, ro_query + timeout + LIMIT)
+Approved investigation tools  (8 tools → 9 fixed, parameterised Cypher queries, ro_query + timeout + LIMIT)
    │
    ▼
 FalkorDB  ──►  Node/Edge/Path results
@@ -74,7 +74,8 @@ app/
 static/  index.html · styles.css · app.js · graph.js
 tests/   test_graph_logic.py (unit) · test_investigations.py · test_api.py (integration)
 scripts/reset_demo.py
-docs/    DEMO_SCRIPT.md · SUBMISSION_CHECKLIST.md
+docs/    PRD.md · ARCHITECTURE.md · MEMORY.md · RULES.md · DEMO_SCRIPT.md · SUBMISSION_CHECKLIST.md
+CLAUDE.md / AGENTS.md   entry point for AI coding tools
 ```
 
 ## 4. Graph schema
@@ -155,7 +156,7 @@ OPTIONAL MATCH (o)-[fr:FOR_RETAILER]->(r:Retailer)
 RETURN o, rs, i, fr, r, rs.quantity AS reserved ORDER BY reserved DESC LIMIT 25
 ```
 
-Other tools: `resolve_entities`, `get_retailer_stock`, `last_order_before_window`, `inspect_sales_visits`, `inspect_active_promotions`. Every executed query, its parameters, row count and duration appear in the **Query trace** panel and in `query_trace` in the API response.
+Other tools: `resolve_entities`, `get_retailer_stock`, `inspect_sales_visits`, `inspect_active_promotions` (8 tools in `TOOL_CATALOGUE` in total). `trace_order_fulfillment` also runs a second query, traced as `last_order_before_window` (most recent order before the lookback window), so an investigation runs 9 queries; `inspect_reservations` is skipped when no route warehouse holds the product. Every executed query, its parameters, row count and duration appear in the **Query trace** panel and in `query_trace` in the API response.
 
 ## 6. Investigation workflow
 
@@ -237,6 +238,7 @@ If FalkorDB is not running, `/api/health` returns **503** with a diagnostic, the
 | `SEED_ON_STARTUP` | true | Seed if graph is empty |
 | `LLM_PROVIDER` | none | `none` or `anthropic` |
 | `ANTHROPIC_API_KEY` / `LLM_MODEL` | empty / claude-opus-5-5 | Only for `LLM_PROVIDER=anthropic` |
+| `LLM_TIMEOUT_SECONDS` | 20 | Timeout for the optional LLM summary call |
 | `CORS_ORIGINS` | localhost:8000 | Allowed origins |
 
 ## 9. AI layer (optional, safe by construction)
@@ -254,7 +256,7 @@ If FalkorDB is not running, `/api/health` returns **503** with a diagnostic, the
 | GET | `/api/demo/scenarios` | Scenarios + tool catalogue |
 | GET | `/api/retailers`, `/api/products` | Selectors |
 | POST | `/api/investigate` | `{question?, retailer_id?, product_id?, scenario_id?}` |
-| GET | `/api/graph?retailer_id=&product_id=` | Investigation subgraph only |
+| GET | `/api/graph?retailer_id=&product_id=` | Returns only the investigation subgraph (runs the same full investigation as `/api/investigate`, including the optional LLM summary) |
 | GET | `/api/demo/mutations` | Mutation allow-list |
 | POST | `/api/demo/mutate` | `{entity_type: Delivery\|Inventory, record_id, field, value, confirm: true}` |
 | POST | `/api/demo/reset` | Restore seed data |
@@ -290,7 +292,14 @@ Last local run: **64 passed** (34 unit + 30 integration) with FalkorDB `falkordb
 
 This project was built with substantial help from an AI coding assistant (Claude Code), which generated most of the code, tests and documentation under the participant's direction. The participant is responsible for the design decisions and must be able to explain the graph model, queries and architecture, as required by the hackathon rules. The optional runtime LLM feature is disabled by default.
 
-## 14. Future improvements
+## 14. Project docs
+
+* `docs/PRD.md` — features, target users, requirements
+* `docs/ARCHITECTURE.md` — tech stack, folder structure, database, API flow
+* `docs/MEMORY.md` — current state and change log (read first; update after every change)
+* `docs/RULES.md` — development rules: no unnecessary dependencies, don't break existing APIs, test after every change
+
+## 15. Future improvements
 
 * Persist investigations as `(:Investigation)-[:CITED]->(record)` nodes so the graph remembers past findings.
 * Event ingestion (order/delivery webhooks) to replace the fixed demo clock.
